@@ -2,4 +2,3 @@ cryptography
 paramiko
 pkgstruct
 PyNaCl
-setuptools
