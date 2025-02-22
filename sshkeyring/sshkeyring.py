@@ -605,7 +605,6 @@ if __name__ == '__main__':
                         self.chk_value(parser, namespace, v, option_string)
                 elif isinstance(values, str):
                     kid,sep,p = values.partition(self.separator)
-                    print(namespace)
                     k = SSHKeyUtil.Default_Key_Id(key_comment=namespace.key_id,
                                                   key_type=namespace.key_type) if sep=="" else kid
                     v = kid if sep=="" else p

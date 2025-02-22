@@ -21,7 +21,6 @@ import paramiko
 import nacl
 
 #import .paramiko_supplement
-print(__name__)
 from .sshkeyinfo import SSHKeyInfo 
 
 class SSHKeyUtil(object):
