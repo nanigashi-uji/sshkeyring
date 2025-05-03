@@ -277,7 +277,7 @@ class SSHKeyRing(SSHKeyUtil):
             new_keyinfo = self.generate_sshkey(key_type=key_type,
                                                key_bits=key_bits,
                                                passphrase=passphrase,
-                                               key_comment=use_key_id,
+                                               key_comment=key_id,
                                                keydir_prefix=keydir_prefix,
                                                privatekey_dir=privatekey_dir,
                                                publickey_dir=publickey_dir,
