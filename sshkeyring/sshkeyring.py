@@ -3,6 +3,7 @@
 
 import sys
 import copy
+import inspect
 #import .paramiko_supplement
 from .sshkeyinfo import SSHKeyInfo
 from .sshkeyutil import SSHKeyUtil
