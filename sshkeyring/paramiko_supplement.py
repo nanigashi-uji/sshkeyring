@@ -4,6 +4,8 @@
 import sys
 import base64
 import cryptography
+import cryptography.hazmat.primitives.serialization
+import cryptography.hazmat.primitives.asymmetric.utils
 import paramiko
 
 #
@@ -94,9 +96,12 @@ def paramiko_agent_agent_fetch_agent_keylist(self, verbose=False):
     """
     Fetch the list of the registered keys from ssh-agent
     """
-    ptype, result = self._send_message(paramiko.agent.cSSH2_AGENTC_REQUEST_IDENTITIES)
+    # ptype, result = self._send_message(paramiko.agent.cSSH2_AGENTC_REQUEST_IDENTITIES)
+    msg = paramiko.message.Message()
+    msg.add_byte(paramiko.agent.cSSH2_AGENTC_REQUEST_IDENTITIES)
+    ptype, result = self._send_message(msg)
     if ptype != paramiko.agent.SSH2_AGENT_IDENTITIES_ANSWER:
-        raise SSHException("could not get keys from ssh-agent")
+        raise paramiko.ssh_exception.SSHException("could not get keys from ssh-agent")
     keys = []
     for i in range(result.get_int()):
         keys.append(paramiko.agent.AgentKey(agent=self,

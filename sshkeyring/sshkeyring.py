@@ -130,7 +130,7 @@ class SSHKeyRing(SSHKeyUtil):
             **kwds)
 
     def openssh_keypair_path(self, key_type : str = None, **kwds):
-        self.__class__.Openssh_KeyPair_Path(key_type=key_type, **kwds)
+        return self.__class__.Openssh_KeyPair_Path(key_type=key_type, **kwds)
 
     def default_key_id(self, key_comment:str=None, key_type:str=None) -> str :
         #return self.__class__.Default_Key_Id(key_comment=key_comment,
@@ -143,7 +143,7 @@ class SSHKeyRing(SSHKeyUtil):
                     rsa_public_exponent : int = 65537,
                     **kwds):
 
-        ktyp  = self.key_type_default.lower() if key_type is None else ( key_type.lower() if isinstance(key_type, "str") else "" )
+        ktyp  = self.key_type_default.lower() if key_type is None else ( key_type.lower() if isinstance(key_type, str) else "" )
         kbits = key_bits if key_bits>0 else self.key_bits_default.get(ktyp, 0)
         return self.__class__.Gen_Key_Obj(key_type=ktyp, key_bits=kbits,
                                           ecdsa_ec_type=ecdsa_ec_type, rsa_public_exponent=rsa_public_exponent, **kwds)
@@ -298,26 +298,26 @@ class SSHKeyRing(SSHKeyUtil):
         if len(self.ssh_agent_alist)<=0:
             if flg_verbose:
                 sys.stderr.write("[%s.%s:%d] Error : No ssh-agent is running.)\n"
-                                 % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno))
+                                 % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno))
         else:
             for agent_sock, agent_client in self.ssh_agent_alist.items():
                 try:
                     flg_add_ok = keyinfo.add_to_agent(agent_sock, agent_client, **kwds)
                     if flg_add_ok:
                         sys.stderr.write("[%s.%s:%d] Info ssh-add : ssh-agent ( key id: %s, type: %s, sock :  %s)\n"
-                                         % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                         % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                             keyinfo.key_id, keyinfo.key_type,  agent_sock))
                         break
                 except Exception as ex:
                     if kwds.get('verbose', False):
                         sys.stderr.write("[%s.%s:%d] Error : Failed to add key to ssh-agent ( key id: %s, type: %s, sock :  %s) : %s\n"
-                                         % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                         % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                             keyinfo.key_id, keyinfo.key_type,  agent_sock, str(ex)))
                         
                     continue
             if ( not flg_add_ok ) and kwds.get('verbose', False):
                 sys.stderr.write("[%s.%s:%d] Error : Failed to add key to ssh-agent ( key id: %s, type: %s, sock :  %s)\n"
-                                 % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                 % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                     keyinfo.key_id, keyinfo.key_type,  agent_sock))
         return flg_add_ok
 
@@ -358,7 +358,7 @@ class SSHKeyRing(SSHKeyUtil):
         return (new_keyinfo, sshadd_ok)
     
     def openssh_list_keyfile_pairs(self, exclude_pattern:list =None, **kwds):
-        self.__class__.Openssh_List_Keyfile_Pairs(exclude_pattern=exclude_pattern, **kwds)
+        return self.__class__.Openssh_List_Keyfile_Pairs(exclude_pattern=exclude_pattern, **kwds)
 
     def list_keyfile_pairs(self,
                            seek_openssh_dir : bool = False,
@@ -465,8 +465,8 @@ class SSHKeyRing(SSHKeyUtil):
         use_key_id   = key_id_use   if isinstance(key_id_use,str)   and key_id_use   else self.key_id_use
         use_key_type = key_type_use if isinstance(key_type_use,str) and key_type_use else self.key_type_use
 
-        self.key_stored.update({ (sskkey_info.key_id, sskkey_info.key_type) : sskkey_info
-                                 for sskkey_info in self.list_key_pairs(seek_openssh_dir=seek_openssh_dir,
+        self.key_stored.update({ (sshkey_info.key_id, sshkey_info.key_type) : sshkey_info
+                                 for sshkey_info in self.list_key_pairs(seek_openssh_dir=seek_openssh_dir,
                                                                         decode_private_key=decode_private_key,
                                                                         passphrase=passphrase,
                                                                         passphrase_alist=passphrase_alist,
@@ -524,13 +524,13 @@ class SSHKeyRing(SSHKeyUtil):
                         continue
                 if ( not flg_add_ok ) and kwds.get('verbose', False):
                     sys.stderr.write("[%s.%s:%d] Error : Failed to add key to ssh-agent ( key id: %s, type: %s, sock :  %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                     % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                         c_key_id, c_key_type,  agent_sock))
 
 
     def refresh_keyinfo(self,
                         use_local_key      : bool = True,
-                        use_ssg_agent      : bool = False,
+                        use_ssh_agent      : bool = False,
                         seek_openssh_dir   : bool = False,
                         decode_private_key : bool = False,
                         passphrase         : str  = None,
@@ -546,7 +546,7 @@ class SSHKeyRing(SSHKeyUtil):
         p = self.__class__.Refresh_KeyInfo(key_stored=self.key_stored,
                                            sshagent_alist=self.ssh_agent_alist,
                                            use_local_key=use_local_key,
-                                           use_ssg_agent=use_ssg_agent,
+                                           use_ssh_agent=use_ssh_agent,
                                            seek_openssh_dir=seek_openssh_dir,
                                            decode_private_key=decode_private_key,
                                            passphrase=passphrase if passphrase is not None else self.passphrase,
@@ -674,10 +674,10 @@ if __name__ == '__main__':
                                 key_type_use=use_key_type,
                                 key_type_default=opts.key_type_default,
                                 key_bits_default=None,
-                                dsa_key_bits_default    = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_types == "dsa"     else None,
-                                ecdsa_key_bits_default  = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_types == "ecdsa"   else None,
-                                ed25519_key_bits_default= opts.key_bits if isinstance(opts.key_bits,int) and opts.key_types == "ed25519" else None,
-                                rsa_key_bits_default    = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_types == "rsa"     else None,
+                                dsa_key_bits_default    = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_type == "dsa"     else None,
+                                ecdsa_key_bits_default  = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_type == "ecdsa"   else None,
+                                ed25519_key_bits_default= opts.key_bits if isinstance(opts.key_bits,int) and opts.key_type == "ed25519" else None,
+                                rsa_key_bits_default    = opts.key_bits if isinstance(opts.key_bits,int) and opts.key_type == "rsa"     else None,
                                 keyfile_basename_default = opts.keyfile_basename,
                                 keyfile_ext_default=None,
                                 private_keyfile_ext_default       = None,
@@ -709,7 +709,7 @@ if __name__ == '__main__':
         #                          verbose=opts.verbose)
     
         sshkeyring.refresh_keyinfo(use_local_key=True,
-                                   use_ssg_agent=(not opts.disuse_ssh_agent),
+                                   use_ssh_agent=(not opts.disuse_ssh_agent),
                                    seek_openssh_dir=opts.use_openssh_keys,
                                    decode_private_key=False,
                                    passphrase= None,

@@ -10,8 +10,11 @@ import base64
 
 import cryptography
 import cryptography.hazmat.primitives.asymmetric.types
+import cryptography.hazmat.primitives.serialization
+import cryptography.hazmat.primitives.asymmetric.utils
 import paramiko
 import nacl
+import nacl.signing
 
 #import .paramiko_supplement
 
@@ -44,6 +47,14 @@ class SSHKeyInfo(object):
         #return self.__class__.__name__+'('+', '.join([str(k)+"="+(("'%s'" % (v,)) if isinstance(v, str) else str(v)) for k,v in self.info.items()])+')'
         return self.__class__.__name__+'('+', '.join([str(k)+"="+(("'%s'" % (v,)) if isinstance(v, str) else v.__repr__()) for k,v in self.info.items()])+')'
 
+    @classmethod
+    def to_bytes(cls, data:(str, bytes)):
+        if isinstance(data, bytes):
+            return data
+        if data is None:
+            return None
+        return data.encode("utf-8")
+
     def load_public_key(self, **kwds):
         if isinstance(self.path_public_key,str) and self.path_public_key:
             try:
@@ -53,9 +64,10 @@ class SSHKeyInfo(object):
                 self.public_key      = cryptography.hazmat.primitives.serialization.load_ssh_public_key(data=pblckey_data)
                 self.public_key_data = pblckey_data
             except Exception as ex:
-                sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s)\n"
+                sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
                                  % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                    sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_public_key))
+                                    self.key_id, self.key_type, self.path_public_key, str(ex)))
+
     def load_public_blob(self, **kwds):
         if isinstance(self.path_public_key,str) and self.path_public_key:
             self.public_blob  = paramiko.pkey.PublicBlob.from_file(self.path_public_key)
@@ -69,27 +81,29 @@ class SSHKeyInfo(object):
                 prvtkey_data = fin.read()
                 fin.close()
                 self.private_key = cryptography.hazmat.primitives.serialization.load_ssh_private_key(data=prvtkey_data,
-                                                                                                     password=pssphrs.encode('utf-8'))
+                                                                                                     password=self.__class__.to_bytes(pssphrs))
+
                 self.private_key_data = prvtkey_data
                 self.passphrase = pssphrs
-            except:
-                sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s)\n"
+            except Exception as ex:
+                sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
                                  % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                    self.key_id, self.key_type, self.path_private_key))
+                                    self.key_id, self.key_type, self.path_private_key, str(ex)))
 
     def load_local_key(self, passphrase=None, **kwds):
         if isinstance(self.path_private_key,str) and self.path_private_key:
             pssphrs = self.passphrase if passphrase is None else passphrase 
             try:
-                self.local_key = paramiko.pkey.PKey.from_path(self.path_private_key, password=pssphrs.encode('utf-8'))
+                self.local_key = paramiko.pkey.PKey.from_path(self.path_private_key, password=self.__class__.to_bytes(pssphrs))
+
                 if ( isinstance(self.local_key, paramiko.ed25519key.Ed25519Key) and self.local_key._verifying_key is None ):
                     self.local_key._verifying_key = nacl.signing.VerifyKey(self.local_key._signing_key.verify_key.encode())
                 if self.passphrase is None:
                     self.passphrase = pssphrs
-            except:
-                sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s)\n"
+            except Exception as ex:
+                sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
                                  % (self.__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                    self.key_id, self.key_type, self.path_private_key))
+                                    self.key_id, self.key_type, self.path_private_key, str(ex)))
 
 
     def set_passphrase(self, passphrase:str=None, overwrite:bool=False, min_passphrase_length:int=8, **kwds):
@@ -144,10 +158,13 @@ class SSHKeyInfo(object):
         if isinstance(agent_client, paramiko.agent.Agent):
             agent_client.ssh_add_key(key=self.local_key, key_comment=self.key_id)
             agent_client.close()
-            sock_env_orig = os.environ['SSH_AUTH_SOCK']
+            sock_env_orig = os.environ.get('SSH_AUTH_SOCK')
             os.environ['SSH_AUTH_SOCK'] = sock
             agent_client.__init__()
-            os.environ['SSH_AUTH_SOCK'] = sock_env_orig
+            if sock_env_orig is None:
+                os.environ.pop('SSH_AUTH_SOCK', None)
+            else:
+                os.environ['SSH_AUTH_SOCK'] = sock_env_orig
             for k in agent_client.get_keys():
 
                 if ( self.key_id != k.comment or self.key_type != k.get_type() ):
@@ -266,12 +283,12 @@ class SSHKeyInfo(object):
             signature = msg.get_binary()
         elif sig_algorithm[:7] == "ssh-dss":
             sig = paramiko.message.Message(msg.get_binary())
-            sigR = msg.get_mpint()
-            sigS = msg.get_mpint()
+            sigR = sig.get_mpint()
+            sigS = sig.get_mpint()
             signature = cryptography.hazmat.primitives.asymmetric.utils.encode_dss_signature(sigR, sigS)
         else:
             sys.stderr.write("[%s.%s:%d] Error : Unknown KeyType(algorithm). (%s)\n"
-                             % (self.__class__.__name__, inspect.currentframe().f_code.co_name, 
+                             % (cls.__name__, inspect.currentframe().f_code.co_name, 
                                 inspect.currentframe().f_lineno, str(sig_algorithm)))
             raise NotImplementedError("Unknown key type")
         return signature

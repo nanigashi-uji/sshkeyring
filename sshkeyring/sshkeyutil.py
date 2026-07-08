@@ -17,8 +17,11 @@ import hashlib
 
 import cryptography
 import cryptography.hazmat.primitives.asymmetric.types
+import cryptography.hazmat.primitives.serialization
+import cryptography.hazmat.primitives.asymmetric.utils
 import paramiko
 import nacl
+import nacl.signing
 
 #import .paramiko_supplement
 from .sshkeyinfo import SSHKeyInfo 
@@ -38,14 +41,22 @@ class SSHKeyUtil(object):
     KEYSCAN_EXCLUDES            = ["authorized_keys*", "known_hosts*", "config*", "*~", "*.bak", "*.back*up"]
 
     PRIVATEKEY_HEADER_PATTERN = re.compile(r'^-{5}BEGIN .* PRIVATE KEY-{5}$')
-    PUBLICKEY_HEADER_PATTERN  = re.compile(r'^(?P<sshkey_type>ssh-(?P<key_type>'
+    PUBLICKEY_HEADER_PATTERN  = re.compile(r'^(?P<sshkey_type>(?:ssh-)*(?P<key_type>'
                                            + r'|'.join(KEY_TYPES)
-                                           + r')) +(?P<key_cont>[^ ]*) +(?P<key_id>.*)$')
+                                           + r')(?:[^ ])*) +(?P<key_cont>[^ ]*) +(?P<key_id>.*)$')
 
     def __init__(self,
                  **kwds):
         pass
 
+    @classmethod
+    def to_bytes(cls, data:(str, bytes)):
+        if isinstance(data, bytes):
+            return data
+        if data is None:
+            return None
+        return data.encode("utf-8")
+    
     @classmethod
     def Get_Key_Type(cls, keyobj, sshformat=False):
         ecdsa_key_types = { "secp256r1": "ecdsa-sha2-nistp256",
@@ -54,7 +65,7 @@ class SSHKeyUtil(object):
         key_type = None
 
         if isinstance(keyobj, (cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey,
-                               cryptography.hazmat.primitives.asymmetric.rsa,RSAPrivateKey)):
+                               cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey)):
             key_type = "rsa"
         elif isinstance(keyobj, (cryptography.hazmat.primitives.asymmetric.dsa.DSAPublicKey,
                                  cryptography.hazmat.primitives.asymmetric.dsa.DSAPrivateKey)):
@@ -62,11 +73,12 @@ class SSHKeyUtil(object):
         elif isinstance(keyobj, (cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PublicKey,
                                  cryptography.hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey)):
             key_type = "ed25519"
-        elif isinstance(keyobj, (cryptography.hazmat.primitives.asymmetric.ed488.Ed488PublicKey,
-                                 cryptography.hazmat.primitives.asymmetric.ed488.Ed488PrivateKey)):
-            key_type = "ed488"
+        elif isinstance(keyobj, (cryptography.hazmat.primitives.asymmetric.ed448.Ed448PublicKey,
+                                 cryptography.hazmat.primitives.asymmetric.ed448.Ed448PrivateKey)):
+            # key_type = "ed448"
+            raise ValueError("Ed448 keys are not supported in OpenSSH serialization")
         elif isinstance(keyobj, cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey):
-            key_type = ecdsa_key_types.get(keyobj.public_key().curve.name)
+            key_type = ecdsa_key_types.get(keyobj.curve.name)
         elif isinstance(keyobj, cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePrivateKey):
             key_type = ecdsa_key_types.get(keyobj.curve.name)
 
@@ -75,7 +87,7 @@ class SSHKeyUtil(object):
 
         raise ValueError('[%s.%s:%d] invalid key type %s'
                          % (cls.__name__, inspect.currentframe().f_code.co_name,
-                            inspect.currentframe().f_lineno, keyobj.__name__) )
+                            inspect.currentframe().f_lineno, type(keyobj).__name__) )
 
     @classmethod
     def Keydirectory_Path(cls,
@@ -261,14 +273,14 @@ class SSHKeyUtil(object):
             if isinstance(sshkey_info.key_type, str) and sshkey_info.key_type:
                 pass
             else:
-                sshkey_info.key_type = cls.Get_Key_Type(sshkey_info.key_type)
+                sshkey_info.key_type = cls.Get_Key_Type(prvt_key_obj)
             ktyp = sshkey_info.key_type
         elif isinstance(private_key_object,
                         cryptography.hazmat.primitives.asymmetric.types.CertificateIssuerPrivateKeyTypes):
             sshkey_info.private_key = private_key_object
             sshkey_info.key_type=cls.Get_Key_Type(private_key_object)
             ktyp         = sshkey_info.key_type
-            prvt_key_obj = private_key_object,
+            prvt_key_obj = private_key_object
         else:
             raise ValueError('[%s.%s:%d] private_key_object be one of (%s)'
                              % (cls.__name__, inspect.currentframe().f_code.co_name,
@@ -308,12 +320,13 @@ class SSHKeyUtil(object):
         
         prvt_key_contents = prvt_key_obj.private_bytes(encoding=cryptography.hazmat.primitives.serialization.Encoding.PEM,
                                                        format=cryptography.hazmat.primitives.serialization.PrivateFormat.OpenSSH,
-                                                       encryption_algorithm=cryptography.hazmat.primitives.serialization.BestAvailableEncryption(passphrs.encode('utf-8')))
+                                                       encryption_algorithm=cryptography.hazmat.primitives.serialization.BestAvailableEncryption(cls.to_bytes(passphrs)))
+
 
         pblc_key_contents = pblc_key_obj.public_bytes(encoding=cryptography.hazmat.primitives.serialization.Encoding.OpenSSH,
                                                       format=cryptography.hazmat.primitives.serialization.PublicFormat.OpenSSH)
 
-        pblc_key_contents += b' '+ky_cmnt.encode('utf-8')
+        pblc_key_contents += b' ' + cls.to_bytes(ky_cmnt)
 
         # return (prvt_key_contents, pblc_key_contents)
 
@@ -417,7 +430,7 @@ class SSHKeyUtil(object):
         ssh_keyinfo.path_public_key  = path_alist['public']
         ssh_keyinfo.passphrase       = pssphrs
         
-        ssh_keyinfo.load_local_key(passphrase=pssphrs.encode('utf-8'))
+        ssh_keyinfo.load_local_key(passphrase=cls.to_bytes(pssphrs))
         ssh_keyinfo.load_public_blob()
         
         return ssh_keyinfo
@@ -559,17 +572,17 @@ class SSHKeyUtil(object):
                     sshkey_info.public_key_data = pblckey_data
                     sshkey_info.load_public_blob()
                 except Exception as ex:
-                    sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_public_key))
+                    sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_public_key, str(ex)))
                     
             if decode_private_key and isinstance(sshkey_info.path_private_key,str) and sshkey_info.path_private_key:
                 pssphrs = sshkey_info.passphrase
                 flg_pssphrs_store = False
-                if passphrs is None:
-                    passphrase_alist.get(sshkey_info.key_id, passphrase) if isinstance(passphrase_alist,dict) else None
+                if pssphrs is None:
+                    pssphrs = passphrase_alist.get(sshkey_info.key_id, passphrase) if isinstance(passphrase_alist,dict) else None
                     flg_pssphrs_store = True
-                if passphrs is None:
+                if pssphrs is None:
                     pssphrs = getpass.getpass(prompt=('[%s.%s:%d] private key passphrase for key_id="%s": ')
                                               % (cls.__name__, inspect.currentframe().f_code.co_name,
                                                  inspect.currentframe().f_lineno, sshkey_info.key_id))
@@ -579,31 +592,33 @@ class SSHKeyUtil(object):
                     prvtkey_data = fin.read()
                     fin.close()
                     sshkey_info.private_key = cryptography.hazmat.primitives.serialization.load_ssh_private_key(data=prvtkey_data,
-                                                                                                                password=pssphrs.encode('utf-8'))
+                                                                                                                password=cls.to_bytes(pssphrs))
                     sshkey_info.private_key_data = prvtkey_data
-                    sshkey_info.load_local_key(passphrase=pssphrs.encode('utf-8'))
+                    sshkey_info.load_local_key(passphrase=cls.to_bytes(pssphrs))
+                    
                     if flg_pssphrs_store:
                         sshkey_info.passphrase = pssphrs
-                except:
-                    sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_private_key))
+                except Exception as ex:
+                    sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_private_key, str(ex)))
                 try:
-                    sshkey_info.local_key = paramiko.pkey.PKey.from_path(sshkey_info.path_private_key, password=pssphrs.encode('utf-8'))
+                    sshkey_info.local_key = paramiko.pkey.PKey.from_path(sshkey_info.path_private_key, password=cls.to_bytes(pssphrs))
+
                     if ( isinstance(sshkey_info.local_key, paramiko.ed25519key.Ed25519Key)
                          and sshkey_info.local_key._verifying_key is None ):
                         sshkey_info.local_key._verifying_key = nacl.signing.VerifyKey(sshkey_info.local_key._signing_key.verify_key.encode())
-                except:
-                    sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_private_key))
+                except Exception as ex:
+                    sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_private_key, str(ex)))
                     
         return buf
 
 
     @classmethod
     def Refresh_Key_Pairs(cls,
-                          key_stored         : dict = {},
+                          key_stored         : dict = None,
                           seek_openssh_dir   : bool = False,
                           decode_private_key : bool = False,
                           passphrase         : str  = None,
@@ -614,6 +629,9 @@ class SSHKeyUtil(object):
                           exclude_pattern    : list = None,
                           **kwds):
 
+        if key_stored is None:
+            key_stored = {}
+        
         keyfile_exists = cls.List_Keyfile_Pairs(seek_openssh_dir=seek_openssh_dir,
                                                 keydir_prefix=keydir_prefix,
                                                 privatekey_dir=privatekey_dir,
@@ -663,17 +681,17 @@ class SSHKeyUtil(object):
                     ptr_keyinfo.public_key_data = pblckey_data
                     ptr_keyinfo.load_public_blob()
                 except Exception as ex:
-                    sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_public_key))
+                    sys.stderr.write("[%s.%s:%d] Error : public_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_public_key, str(ex)))
                     
             if decode_private_key and isinstance(ptr_keyinfo.path_private_key,str) and ptr_keyinfo.path_private_key:
                 pssphrs = ptr_keyinfo.passphrase
                 flg_pssphrs_store = False
-                if passphrs is None:
-                    passphrase_alist.get(ptr_keyinfo.key_id, passphrase) if isinstance(passphrase_alist,dict) else None
+                if pssphrs is None:
+                    pssphrs = passphrase_alist.get(ptr_keyinfo.key_id, passphrase) if isinstance(passphrase_alist,dict) else None
                     flg_pssphrs_store = True
-                if passphrs is None:
+                if pssphrs is None:
                     pssphrs = getpass.getpass(prompt=('[%s.%s:%d] private key passphrase for key_id="%s": ')
                                               % (cls.__name__, inspect.currentframe().f_code.co_name,
                                                  inspect.currentframe().f_lineno, ptr_keyinfo.key_id))
@@ -683,24 +701,27 @@ class SSHKeyUtil(object):
                     prvtkey_data = fin.read()
                     fin.close()
                     ptr_keyinfo.private_key = cryptography.hazmat.primitives.serialization.load_ssh_private_key(data=prvtkey_data,
-                                                                                                                password=pssphrs.encode('utf-8'))
+                                                                                                                password=cls.to_bytes(pssphrs))
+
                     ptr_keyinfo.private_key_data = prvtkey_data
-                    ptr_keyinfo.load_local_key(passphrase=pssphrs.encode('utf-8'))
+                    ptr_keyinfo.load_local_key(passphrase=cls.to_bytes(pssphrs))
+
                     if flg_pssphrs_store:
                         ptr_keyinfo.passphrase = pssphrs
-                except:
-                    sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_private_key))
+                except Exception as ex:
+                    sys.stderr.write("[%s.%s:%d] Error : private_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_private_key, str(ex)))
                 try:
-                    ptr_keyinfo.local_key = paramiko.pkey.PKey.from_path(ptr_keyinfo.path_private_key, password=pssphrs.encode('utf-8'))
+                    ptr_keyinfo.local_key = paramiko.pkey.PKey.from_path(ptr_keyinfo.path_private_key, password=cls.to_bytes(pssphrs))
+                    
                     if ( isinstance(ptr_keyinfo.local_key, paramiko.ed25519key.Ed25519Key)
                          and ptr_keyinfo.local_key._verifying_key is None ):
                         ptr_keyinfo.local_key._verifying_key = nacl.signing.VerifyKey(ptr_keyinfo.local_key._signing_key.verify_key.encode())
-                except:
-                    sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s)\n"
-                                     % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
-                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_private_key))
+                except Exception as ex:
+                    sys.stderr.write("[%s.%s:%d] Error : local_key can not be loaded ( key id: %s, type: %s : %s) %s\n"
+                                     % (cls.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
+                                        ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_private_key, str(ex)))
                     
         return key_stored
     
@@ -708,7 +729,7 @@ class SSHKeyUtil(object):
     def Connect_SSHAgent(cls, sock_path : str, restore_environ : bool = False, **kwds):
         verbose         = kwds.get('verbose', False)
         
-        sock_env_orig = os.environ['SSH_AUTH_SOCK']
+        sock_env_orig = os.environ.get('SSH_AUTH_SOCK')
         client_obj    = None
         if sock_path is None or not pathlib.Path(sock_path).is_socket():
             if verbose:
@@ -729,11 +750,14 @@ class SSHKeyUtil(object):
                     client_obj = agent_client_obj
             except Exception as ex:
                 if verbose:
-                    sys.stderr.write('[%s.%s:%d] Fail to connect agent : %s\n'
+                    sys.stderr.write('[%s.%s:%d] Fail to connect agent : %s : %s\n'
                                      % (cls.__name__, inspect.currentframe().f_code.co_name,
-                                        inspect.currentframe().f_lineno, sock_path))
+                                        inspect.currentframe().f_lineno, sock_path, str(ex)))
         if restore_environ:
-            os.environ['SSH_AUTH_SOCK'] = sock_env_orig
+            if sock_env_orig is None:
+                os.environ.pop('SSH_AUTH_SOCK', None)
+            else:
+                os.environ['SSH_AUTH_SOCK'] = sock_env_orig
         return client_obj
 
     @classmethod
@@ -756,8 +780,11 @@ class SSHKeyUtil(object):
     
     @classmethod
     def Invoke_SSHAgent(cls, restore_environ : bool = False, **kwds):
+        ssh_agent_sock = None
+        agent_pid = -1
+
         verbose         = kwds.get('verbose', False)
-        sock_env_orig = os.environ['SSH_AUTH_SOCK']
+        sock_env_orig = os.environ.get('SSH_AUTH_SOCK')
 
         child_proc = subprocess.Popen([os.environ.get("SSH_AGENT", "ssh-agent"), "-s"],
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -784,7 +811,10 @@ class SSHKeyUtil(object):
                                     inspect.currentframe().f_lineno, agent_pid, serr))
 
         if restore_environ:
-            os.environ['SSH_AUTH_SOCK'] = sock_env_orig
+            if sock_env_orig is None:
+                os.environ.pop('SSH_AUTH_SOCK', None)
+            else:
+                os.environ['SSH_AUTH_SOCK'] = sock_env_orig
 
         return (ssh_agent_sock, agent_pid)
 
@@ -821,10 +851,14 @@ class SSHKeyUtil(object):
 
     @classmethod
     def Refresh_SSHAgent_Alist(cls,
-                               sshagent_alist  : dict = {},
+                               sshagent_alist  : dict = None,
                                invoke_agent    : bool = False,
                                restore_environ : bool = False, 
                                force_reconnect : bool = False, **kwds):
+
+        if sshagent_alist is None:
+            sshagent_alist = {}
+
         flg_verbose = kwds.get('verbose', False)
         sockpath_candidate = cls.SSHAgent_SocketPath_Lists(**kwds)
         unavaiable_socks = []
@@ -833,11 +867,14 @@ class SSHKeyUtil(object):
                 if force_reconnect:
                     client.close()
                 if client._conn is None:
-                    sock_env_orig = os.environ['SSH_AUTH_SOCK']
+                    sock_env_orig = os.environ.get('SSH_AUTH_SOCK')
                     os.environ['SSH_AUTH_SOCK'] = sockpath
                     client.__init__()
-                    os.environ['SSH_AUTH_SOCK'] = sock_env_orig
-                    if client_obj._conn is None and flg_verbose:
+                    if sock_env_orig is None:
+                        os.environ.pop('SSH_AUTH_SOCK', None)
+                    else:
+                        os.environ['SSH_AUTH_SOCK'] = sock_env_orig
+                    if client._conn is None and flg_verbose:
                         sys.stderr.write('[%s.%s:%d] Fail to connect agent : %s\n'
                                          % (cls.__name__, inspect.currentframe().f_code.co_name,
                                             inspect.currentframe().f_lineno, sockpath))
@@ -910,11 +947,18 @@ class SSHKeyUtil(object):
 
     @classmethod
     def Refresh_KeyInfo_SSHAgent(cls,
-                                 key_stored      : dict = {},
-                                 sshagent_alist  : dict = {},
+                                 key_stored      : dict = None,
+                                 sshagent_alist  : dict = None,
                                  invoke_agent    : bool = False,
                                  restore_environ : bool = False, 
                                  force_reconnect : bool = False, **kwds):
+
+        if key_stored is None:
+            key_stored  = {}
+
+        if sshagent_alist is None:
+            sshagent_alist = {}
+        
         sshagent_alist = cls.Refresh_SSHAgent_Alist(sshagent_alist=sshagent_alist,
                                                     invoke_agent=invoke_agent,
                                                     restore_environ=restore_environ,
@@ -969,10 +1013,10 @@ class SSHKeyUtil(object):
 
     @classmethod
     def Refresh_KeyInfo(cls,
-                        key_stored         : dict = {},
-                        sshagent_alist        : dict = {},
+                        key_stored         : dict = None,
+                        sshagent_alist     : dict = None,
                         use_local_key      : bool = True,
-                        use_ssg_agent      : bool = False,
+                        use_ssh_agent      : bool = False,
                         seek_openssh_dir   : bool = False,
                         decode_private_key : bool = False,
                         passphrase         : str  = None,
@@ -985,6 +1029,12 @@ class SSHKeyUtil(object):
                         restore_environ    : bool = False,
                         force_reconnect    : bool = False, **kwds):
 
+        if key_stored is None:
+            key_stored  = {}
+
+        if sshagent_alist is None:
+            sshagent_alist = {}
+
         if use_local_key:
             key_stored_buf = cls.Refresh_Key_Pairs(key_stored=key_stored,
                                                    seek_openssh_dir=seek_openssh_dir,
@@ -995,7 +1045,7 @@ class SSHKeyUtil(object):
                                                    privatekey_dir=privatekey_dir,
                                                    publickey_dir=publickey_dir,
                                                    exclude_pattern=exclude_pattern, **kwds)
-        if use_ssg_agent:
+        if use_ssh_agent:
             key_stored_ret = cls.Refresh_KeyInfo_SSHAgent(key_stored=key_stored,
                                                           sshagent_alist=sshagent_alist,
                                                           invoke_agent=invoke_agent,
