@@ -589,7 +589,7 @@ class SSHKeyUtil(object):
                                      % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                         sshkey_info.key_id, sshkey_info.key_type, sshkey_info.path_private_key))
                 try:
-                    sshkey_info.local_key = paramiko.pkey.PKey.from_path(sshkey_info.path_private_key, passphrase=pssphrs.encode('utf-8'))
+                    sshkey_info.local_key = paramiko.pkey.PKey.from_path(sshkey_info.path_private_key, password=pssphrs.encode('utf-8'))
                     if ( isinstance(sshkey_info.local_key, paramiko.ed25519key.Ed25519Key)
                          and sshkey_info.local_key._verifying_key is None ):
                         sshkey_info.local_key._verifying_key = nacl.signing.VerifyKey(sshkey_info.local_key._signing_key.verify_key.encode())
@@ -693,7 +693,7 @@ class SSHKeyUtil(object):
                                      % (__class__.__name__, inspect.currentframe().f_code.co_name, inspect.currentframe().f_lineno,
                                         ptr_keyinfo.key_id, ptr_keyinfo.key_type, ptr_keyinfo.path_private_key))
                 try:
-                    ptr_keyinfo.local_key = paramiko.pkey.PKey.from_path(ptr_keyinfo.path_private_key, passphrase=pssphrs.encode('utf-8'))
+                    ptr_keyinfo.local_key = paramiko.pkey.PKey.from_path(ptr_keyinfo.path_private_key, password=pssphrs.encode('utf-8'))
                     if ( isinstance(ptr_keyinfo.local_key, paramiko.ed25519key.Ed25519Key)
                          and ptr_keyinfo.local_key._verifying_key is None ):
                         ptr_keyinfo.local_key._verifying_key = nacl.signing.VerifyKey(ptr_keyinfo.local_key._signing_key.verify_key.encode())

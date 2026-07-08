@@ -81,7 +81,7 @@ class SSHKeyInfo(object):
         if isinstance(self.path_private_key,str) and self.path_private_key:
             pssphrs = self.passphrase if passphrase is None else passphrase 
             try:
-                self.local_key = paramiko.pkey.PKey.from_path(self.path_private_key, passphrase=pssphrs.encode('utf-8'))
+                self.local_key = paramiko.pkey.PKey.from_path(self.path_private_key, password=pssphrs.encode('utf-8'))
                 if ( isinstance(self.local_key, paramiko.ed25519key.Ed25519Key) and self.local_key._verifying_key is None ):
                     self.local_key._verifying_key = nacl.signing.VerifyKey(self.local_key._signing_key.verify_key.encode())
                 if self.passphrase is None:
