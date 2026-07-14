@@ -764,7 +764,7 @@ class SSHKeyUtil(object):
     def SSHAgent_SocketPath_Lists(cls, **kwds):
         sock_cands = []
         if sys.platform == 'darwin':
-            sock_seek_dirs = [ '/private/tmp', os.environ.get('TMPDIR', '/tmp') ]
+            sock_seek_dirs = [ '/var/run', '/private/tmp', os.environ.get('TMPDIR', '/tmp') ]
             sock_seek_patterns = [ ('com.apple.launchd.*', 'Listeners'),  ('ssh-*', 'agent.*') ]
         else:
             sock_seek_dirs = [ os.environ.get('TMPDIR', '/tmp'), '/var/tmp' ]
